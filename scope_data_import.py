@@ -56,7 +56,7 @@ class Import():
             trig_highs = []
             trig_lows = []
             for idx in np.arange(1, dat.shape[1]):
-                w = np.where(dat[:, idx] > np.max(dat[:, idx]) * 0.5)[0]
+                w = np.where(dat[:, idx] > np.max(dat[:, idx]) * 0.1)[0]
                 trig_highs.append(w[0])
                 trig_lows.append(w[-1])
                 self.arrival_times[self.exp_files[c]] = dat[w[0], 0]
@@ -88,10 +88,13 @@ class Import():
         f, a = plt.subplots(nrows=len(self.shortened_data), sharex=True)
         c = 0
         for idx, dat in enumerate(self.shortened_data):
-            a[idx].plot(dat[:, 0], dat[:, 1:])
-            labels = [ii.stem.split("__")[-1] for ii in self.exp_files[c:c + dat.shape[1]]]
+            # labels = [ii.stem.split("__")[-1] for ii in self.exp_files[c:c + dat.shape[1]]]
+            for i in np.arange(dat.shape[1] - 1):
+                line, = a[idx].plot(dat[:, 0], dat[:, 1 + i], label=self.exp_files[c + i].stem.split("__")[-1])
+                a[idx].axvline(list(self.arrival_times.items())[c + i][1], c=line.get_color(), alpha=0.25)
+
             c += dat.shape[1] - 1
-            a[idx].legend(labels)
+            a[idx].legend()
             
         
         f.supxlabel("Time (s)")
