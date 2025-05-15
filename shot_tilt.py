@@ -79,7 +79,7 @@ class Import():
             outstr = f"{'Scope/Channel':<15} {'Time(s)':>10}\n"
             for (key, item) in self.arrival_times.items():
                 outstr += f"{key.stem.split("__")[-1]:<15} {item:>10.4e}\n"
-            savename.write_text(outstr)
+            savename.write_text(outstr.strip("\n"))
         
         return self
             
