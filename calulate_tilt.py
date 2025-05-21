@@ -15,6 +15,7 @@ class Tilt():
         
     def iterate_tilt_calculation(self):
         avg = 0
+        angles = []
         outfile = Path(self.file).parent.joinpath("calculated_tilt.txt")
         outstr = ""
         for i, combo in enumerate(combinations(self.data["pin"], 3)):
@@ -24,15 +25,18 @@ class Tilt():
             retstr, retval = self.calculate_tilt(pins=np.array(combo)) 
 
             if retval is not None:
+                angles.append(retval)
                 avg = retval + avg * i
                 avg /= i + 1
                 
             outstr += retstr + "\n"
         
-        outstr += "-"*60 + "\n" + f"{'Average':<12}: {avg*1e3:>10.3f} mrad"
+        std = np.std(angles) 
+        o = "-"*60 + "\n" + f"{'Average':<12}: {avg*1e3:>10.3f}+-{std*1e3:.3f} mrad"
+        outstr += o
 
         outfile.write_text(outstr)
-        print("-----------------------------", f"{'Average':<12}: {avg*1e3:>10.3f} mrad", sep="\n")
+        print(o, sep="\n")
     
     def calculate_tilt(self, pins=(1,2,3)):
         impact = {}
