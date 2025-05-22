@@ -1,0 +1,5 @@
+[tool.ruff]
+# Add any global configurations for ruff here (optional)
+
+[tool.ruff.per-file-ignores]
+"impact_viz.py" = ["ANN201", "ANN001"]

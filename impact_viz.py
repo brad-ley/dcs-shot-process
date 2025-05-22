@@ -1,28 +1,30 @@
-from PyQt6 import QtWidgets, QtCore, QtGui
-import pyqtgraph.opengl as gl
-import pyqtgraph as pg
-import numpy as np
 import sys
 import time
-    
-def check_if_valid(val):
+
+import numpy as np
+import pyqtgraph.opengl as gl
+from PyQt6 import QtCore, QtGui, QtWidgets
+from calculate_tilt_robust import Tilt
+
+
+def check_if_valid(val: str) -> bool:
     try:
         float(val)
-        return True
-    except:
+    except TypeError:
         return False
-    
+    else:
+        return True
+
+
 SPINBOX_STYLESHEET = """
     QDoubleSpinBox {
         border: 1px solid #B0B0B0;  /* Border color */
         border-radius: 3px;         /* Rounded corners */
         padding: 3px;                /* Padding inside the box */
     }
-
     QDoubleSpinBox:focus {
         border-color: #5F9EA0;      /* Border color when focused */
     }
-    
     QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
         width: 0;
         height: 0;
@@ -33,10 +35,11 @@ SPINBOX_STYLESHEET = """
 
 class PointInputRow(QtWidgets.QWidget):
     """A single row of x, y, z, time inputs."""
+
     values_changed = QtCore.pyqtSignal()
     delete_clicked = QtCore.pyqtSignal()
 
-    def __init__(self, id=None):
+    def __init__(self, id=None) -> None:  # noqa: A002
         super().__init__()
         layout = QtWidgets.QHBoxLayout(self)
         self.x_input = QtWidgets.QDoubleSpinBox()
@@ -46,8 +49,8 @@ class PointInputRow(QtWidgets.QWidget):
 
         self.delete_button = QtWidgets.QPushButton("🗑️")  # Trash can button
         self.delete_button.setFixedWidth(25)
-        self.delete_button.setStyleSheet('text-align: left;')
-        
+        self.delete_button.setStyleSheet("text-align: left;")
+
         if not id:
             self.row_id = str(time.time())  # in PointInputRow
         else:
@@ -55,7 +58,7 @@ class PointInputRow(QtWidgets.QWidget):
 
         for widget, label in zip(
             [self.x_input, self.y_input, self.z_input, self.t_input],
-            ['x (mm)', 'y (mm)', 'z (um)', 't (ns)']
+            ["x (mm)", "y (mm)", "z (um)", "t (ns)"],
         ):
             # widget.setPlaceholderText(label)
             widget.setMinimumWidth(60)
@@ -64,22 +67,33 @@ class PointInputRow(QtWidgets.QWidget):
             else:
                 widget.setDecimals(1)
             widget.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+            widget.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Fixed,
+            )
+            widget.setRange(-20, 20)
             widget.setStyleSheet(SPINBOX_STYLESHEET)
             widget.textChanged.connect(self.values_changed.emit)
 
             layout.addWidget(widget)
-            
+
         layout.addStretch()
         layout.addWidget(self.delete_button)
         self.delete_button.clicked.connect(self.delete_clicked.emit)
 
     def get_values(self):
-        values = tuple(float(v) if check_if_valid(v) else None for v in [self.x_input.text(), self.y_input.text(), self.z_input.text(), self.t_input.text()]) # roll one spot here to handle the axial rotation of the camera angle
+        values = tuple(
+            float(v) if check_if_valid(v) else None
+            for v in [
+                self.x_input.text(),
+                self.y_input.text(),
+                self.z_input.text(),
+                self.t_input.text(),
+            ]
+        )  # roll one spot here to handle the axial rotation of the camera angle
         if all(v is None for v in values):
             return None
-        else:
-            return tuple(v if v is not None else 0 for v in values)
+        return tuple(v if v is not None else 0 for v in values)
 
 
 class MainWindow(QtWidgets.QWidget):
@@ -104,10 +118,13 @@ class MainWindow(QtWidgets.QWidget):
         self.velocity_input.setValue(5)
         self.velocity_input.setDecimals(2)
         self.velocity_input.setFixedWidth(80)
-        
+
         self.velocity_input.setStyleSheet(SPINBOX_STYLESHEET)
-        
-        velocity_label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+
+        velocity_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
         velocity_row.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
 
         velocity_row.setStretch(0, 0)  # For the label
@@ -117,7 +134,7 @@ class MainWindow(QtWidgets.QWidget):
         velocity_row.addWidget(velocity_label)
         velocity_row.addWidget(self.velocity_input)
         self.form_layout.addLayout(velocity_row)
-        
+
         coordinate_row = QtWidgets.QHBoxLayout()
         labels = ["x (mm)", "y (mm)", "z (um)", "t (ns)", "Delete"]
         for label in labels:
@@ -127,10 +144,13 @@ class MainWindow(QtWidgets.QWidget):
                 widget.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             else:
                 widget.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-            
+
             if label not in ["t (ns)", "Delete"]:
                 widget.setFixedWidth(60)
-            widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+            widget.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Fixed,
+            )
             coordinate_row.addWidget(widget)
 
         coordinate_row.setContentsMargins(11, 10, 0, 0)
@@ -144,8 +164,34 @@ class MainWindow(QtWidgets.QWidget):
 
         # Right: 3D plot
         self.view = gl.GLViewWidget()
-        self.view.setCameraPosition(distance=3e-2, elevation=0, azimuth=75) # elevation and azimuth set viewing angle
-        self.view.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.view.setCameraPosition(
+            distance=3e-2,
+            elevation=0,
+            azimuth=75,
+        )  # elevation and azimuth set viewing angle
+        self.view.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
+
+        self.gl_frame = QtWidgets.QFrame()
+        self.gl_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #B0B0B0;  /* Border color */
+                border-radius: 5px;
+                    }
+        """)
+
+        # Inner container to hold the GLViewWidget inside the frame
+        inner_widget = QtWidgets.QWidget()
+        inner_layout = QtWidgets.QVBoxLayout(inner_widget)
+        inner_layout.setContentsMargins(2, 2, 2, 2)
+        inner_layout.addWidget(self.view)
+
+        # Layout for the frame
+        frame_layout = QtWidgets.QVBoxLayout(self.gl_frame)
+        frame_layout.setContentsMargins(0, 0, 0, 0)
+        frame_layout.addWidget(inner_widget)
 
         # self.grid = gl.GLGridItem()
         # self.view.addItem(self.grid)
@@ -153,33 +199,36 @@ class MainWindow(QtWidgets.QWidget):
 
         self.grid_xy = gl.GLGridItem()
         self.grid_xy.setSize(2e-2, 2e-2)  # 10 cm grid
-        self.grid_xy.setSpacing(1e-3, 1e-3)    # 1 mm density
+        self.grid_xy.setSpacing(1e-3, 1e-3)  # 1 mm density
         self.view.addItem(self.grid_xy)
-        self.grid_xy.rotate(90, 0, 1, 0)  
+        self.grid_xy.rotate(90, 0, 1, 0)
 
         # Initial scatter plot (empty)
-        self.scatter = gl.GLScatterPlotItem(pos=np.zeros((0, 3)), color=(0, 0, 0, 1), size=5)
+        self.scatter = gl.GLScatterPlotItem(
+            pos=np.zeros((0, 3)), color=(0, 0, 0, 1), size=5
+        )
         self.view.addItem(self.scatter)
-        
+
         # Right side layout for plot + slider
         right_layout = QtWidgets.QVBoxLayout()
-        right_layout.addWidget(self.view)
+        right_layout.addWidget(self.gl_frame)
 
         # Create and configure slider
         self.slider_row = QtWidgets.QHBoxLayout()
         self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self.slider.setMinimum(-1000)
-        self.slider.setMaximum(1000)
+        self.slider.setMinimum(-250)
+        self.slider.setMaximum(250)
         self.slider.setValue(0)
         self.slider.setTickPosition(QtWidgets.QSlider.TickPosition.TicksBelow)
-        self.slider.setTickInterval(50)
+        # self.slider.setTickInterval(1)
 
-        self.slider_value = QtWidgets.QLabel(f"Time: {self.slider.value()} ns")
-        self.slider_value.setFixedWidth(80)
-        
+        self.time = self.slider.value() / 1e1
+        self.slider_value = QtWidgets.QLabel(f"Time: {self.time:.1f} ns")
+        self.slider_value.setFixedWidth(90)
+
         self.slider_row.addWidget(self.slider_value)
         self.slider_row.addWidget(self.slider)
-        
+
         slider_widget = QtWidgets.QWidget()
         slider_widget.setLayout(self.slider_row)
 
@@ -202,10 +251,15 @@ class MainWindow(QtWidgets.QWidget):
         self.setWindowTitle("Impact visualization tool (1000x zoom along impact axis)")
         self.resize(1200, 600)
 
-        self.settings = QtCore.QSettings("DCS", "Impact-Visualizer")
+        self.settings = QtCore.QSettings(
+            QtCore.QSettings.Format.IniFormat,
+            QtCore.QSettings.Scope.UserScope,
+            "DCS",
+            "Impact-Visualizer",
+        )
         self.restoreGeometry(self.settings.value("geometry", b""))
         self.restoreGeometry(self.settings.value("windowState", b""))
-        
+
         row_keys = [k for k in self.settings.allKeys() if k.startswith("row_")]
         row_keys.sort()
         self.input_rows = []
@@ -216,29 +270,48 @@ class MainWindow(QtWidgets.QWidget):
             if values:
                 x, y, z, t = (float(v) if check_if_valid(v) else 0 for v in values)
                 row = self.input_rows[-1]
+                row.blockSignals(True)
                 row.x_input.setValue(self.parse_val(x))
                 row.y_input.setValue(self.parse_val(y))
                 row.z_input.setValue(self.parse_val(z))
                 row.t_input.setValue(self.parse_val(t))
+                row.blockSignals(True)
 
         if len(self.input_rows) == 0:
             self.add_input_row()
-            
+
+        if self.settings.value("velocity", b""):
+            self.velocity_input.blockSignals(True)
+            self.velocity_input.setValue(float(self.settings.value("velocity")))
+            self.velocity_input.blockSignals(False)
+        if self.settings.value("time_slider", b""):
+            self.slider.blockSignals(True)
+            self.slider.setValue(int(self.settings.value("time_slider")))
+            self.slider.blockSignals(False)
+
+        if not hasattr(self, "result"):
+            self.result = QtWidgets.QLabel("")
+            result_row = QtWidgets.QHBoxLayout()
+            result_row.addWidget(self.result)
+            self.form_layout.addLayout(result_row)
+
+        self.plot_points()
 
     def on_slider_changed(self, val):
-        self.slider_value.setText(f"Time: {val} ns")
-        self.move_plane(t=val)
+        self.time = val / 1e1
+        self.slider_value.setText(f"Time: {self.time:.1f} ns")
+        self.move_plane(t=self.time)
         self.plot_points()
-        
 
     def move_plane(self, t):
         m = QtGui.QMatrix4x4()
-        m.translate(-self.velocity_input.value()*1e3 * t*1e-9, 0, 0)
+        m.translate(
+            -self.velocity_input.value() * 1e3 * t * 1e-9 * 1e3, 0, 0
+        )  # need to scale up to "zoom" in
         # m.rotate(self.velocity_input.value() * t, 0, 0, 1)
         self.plane.setTransform(m)
         self.center = self.plane.transform().map(QtGui.QVector3D(0, 0, 0))
         self.z = self.center.x()
-        
 
     def make_circular_plane(self, radius=10e-3, segments=60):
         z = 0
@@ -256,35 +329,41 @@ class MainWindow(QtWidgets.QWidget):
         # Triangulate: connect center point to each edge segment
         faces = []
         for i in range(1, segments + 1):
-            faces.append([i+1, i, 0])
+            faces.append([i + 1, i, 0])
         faces = np.array(faces)
 
         # Create the mesh
-        self.plane = gl.GLMeshItem(vertexes=vertices, faces=faces, color=(0.3, 0.6, 1.0, 0.3), smooth=True, drawEdges=False)
-        self.plane.setGLOptions('translucent')
+        self.plane = gl.GLMeshItem(
+            vertexes=vertices,
+            faces=faces,
+            color=(0.3, 0.6, 1.0, 0.3),
+            smooth=True,
+            drawEdges=False,
+        )
+        self.plane.setGLOptions("translucent")
         self.view.addItem(self.plane)
-    
-                
+
     def parse_val(self, val):
-        """ return int if int, if has float val, return str() of float"""
+        """return int if int, if has float val, return str() of float"""
         return val
         # if int(val) == float(val):
         #     return str(int(val))
         # else:
         #     return str(val)
 
-
     def add_input_row(self, id=None):
         row = PointInputRow(id=id)
         row.values_changed.connect(self.plot_points)
         row.delete_clicked.connect(self.delete_input_row)
         self.input_rows.append(row)
-        self.form_layout.insertWidget(self.form_layout.count() - 2, row)  # Add above buttons
-        
+        self.form_layout.insertWidget(
+            self.form_layout.count() - 3, row
+        )  # Add above buttons
+
     def delete_input_row(self):
         row = self.sender()
         index = self.form_layout.indexOf(row)
-        
+
         if index != -1:
             self.input_rows.remove(row)
             row.deleteLater()
@@ -294,13 +373,15 @@ class MainWindow(QtWidgets.QWidget):
 
     def plot_points(self):
         points = []
+        pins = []
         for row in self.input_rows:
             values = row.get_values()
 
             if values:
                 x, y, z, t = values
                 points.append(np.roll(np.array((x * 1e-3, y * 1e-3, z * 1e-3)), 1))
-                
+                pins.append(np.array((x * 1e-3, y * 1e-3, z * 1e-6, t * 1e-9)))
+
         if points:
             pos = np.array(points)
             if not hasattr(self, "z"):
@@ -317,12 +398,27 @@ class MainWindow(QtWidgets.QWidget):
 
         else:
             self.scatter.setData(pos=np.zeros((0, 3)), color=(0, 0, 0, 1))
-            
+
+        self.calculate_angle(np.array(pins))
+
+    def calculate_angle(self, pins):
+        angle, std = Tilt(
+            velocity=self.velocity_input.value(), pins=pins
+        ).iterate_tilt_calculation(
+            # save_data=False
+            save_data=True
+        )
+
+        text = f"{'Average'}: {angle * 1e3:>10.3f}+-{std * 1e3:.3f} mrad"
+        self.result.setText(text)
+
     def closeEvent(self, event):
-        self.settings = QtCore.QSettings("DCS", "Impact-Visualizer")
         for i, row in enumerate(self.input_rows):
             values = row.get_values()
             self.settings.setValue(f"row_{row.row_id}", values)
+
+        self.settings.setValue("velocity", self.velocity_input.value())
+        self.settings.setValue("time_slider", self.slider.value())
 
         self.settings.setValue("geometry", self.saveGeometry())
         super().closeEvent(event)
