@@ -61,7 +61,7 @@ class PointInputRow(QtWidgets.QWidget):
             ["x (mm)", "y (mm)", "z (um)", "t (ns)"],
         ):
             # widget.setPlaceholderText(label)
-            widget.setMinimumWidth(60)
+            widget.setMinimumWidth(65)
             if label not in ["z (um)", "t (ns)"]:
                 widget.setDecimals(4)
             else:
@@ -100,6 +100,7 @@ class MainWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         main_layout = QtWidgets.QHBoxLayout(self)
+        self.matrix = QtGui.QMatrix4x4()
 
         # Left: Input form
         self.form_widget = QtWidgets.QWidget()
@@ -146,7 +147,7 @@ class MainWindow(QtWidgets.QWidget):
                 widget.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
 
             if label not in ["t (ns)", "Delete"]:
-                widget.setFixedWidth(60)
+                widget.setFixedWidth(65)
             widget.setSizePolicy(
                 QtWidgets.QSizePolicy.Policy.Expanding,
                 QtWidgets.QSizePolicy.Policy.Fixed,
@@ -257,8 +258,15 @@ class MainWindow(QtWidgets.QWidget):
             "DCS",
             "Impact-Visualizer",
         )
+
         self.restoreGeometry(self.settings.value("geometry", b""))
         self.restoreGeometry(self.settings.value("windowState", b""))
+
+        if not hasattr(self, "result"):
+            self.result = QtWidgets.QLabel("")
+            result_row = QtWidgets.QHBoxLayout()
+            result_row.addWidget(self.result)
+            self.form_layout.addLayout(result_row)
 
         row_keys = [k for k in self.settings.allKeys() if k.startswith("row_")]
         row_keys.sort()
@@ -275,7 +283,7 @@ class MainWindow(QtWidgets.QWidget):
                 row.y_input.setValue(self.parse_val(y))
                 row.z_input.setValue(self.parse_val(z))
                 row.t_input.setValue(self.parse_val(t))
-                row.blockSignals(True)
+                row.blockSignals(False)
 
         if len(self.input_rows) == 0:
             self.add_input_row()
@@ -289,13 +297,8 @@ class MainWindow(QtWidgets.QWidget):
             self.slider.setValue(int(self.settings.value("time_slider")))
             self.slider.blockSignals(False)
 
-        if not hasattr(self, "result"):
-            self.result = QtWidgets.QLabel("")
-            result_row = QtWidgets.QHBoxLayout()
-            result_row.addWidget(self.result)
-            self.form_layout.addLayout(result_row)
-
         self.plot_points()
+        self.calculate_angle()
 
     def on_slider_changed(self, val):
         self.time = val / 1e1
@@ -304,14 +307,13 @@ class MainWindow(QtWidgets.QWidget):
         self.plot_points()
 
     def move_plane(self, t):
-        m = QtGui.QMatrix4x4()
-        m.translate(
-            -self.velocity_input.value() * 1e3 * t * 1e-9 * 1e3, 0, 0
+        self.z = -self.velocity_input.value() * 1e3 * t * 1e-9 * 1e3 
+        self.matrix = QtGui.QMatrix4x4()
+        self.matrix.translate(
+            self.z, 0, 0
         )  # need to scale up to "zoom" in
-        # m.rotate(self.velocity_input.value() * t, 0, 0, 1)
-        self.plane.setTransform(m)
-        self.center = self.plane.transform().map(QtGui.QVector3D(0, 0, 0))
-        self.z = self.center.x()
+        self.matrix.rotate(self.magnified_tilt_angle * 180 / np.pi, 1, 1, 1)
+        self.plane.setTransform(self.matrix)
 
     def make_circular_plane(self, radius=10e-3, segments=60):
         z = 0
@@ -354,6 +356,7 @@ class MainWindow(QtWidgets.QWidget):
     def add_input_row(self, id=None):
         row = PointInputRow(id=id)
         row.values_changed.connect(self.plot_points)
+        row.values_changed.connect(self.calculate_angle)
         row.delete_clicked.connect(self.delete_input_row)
         self.input_rows.append(row)
         self.form_layout.insertWidget(
@@ -371,7 +374,7 @@ class MainWindow(QtWidgets.QWidget):
 
         self.plot_points()
 
-    def plot_points(self):
+    def plot_points(self, sender=None):
         points = []
         pins = []
         for row in self.input_rows:
@@ -381,6 +384,28 @@ class MainWindow(QtWidgets.QWidget):
                 x, y, z, t = values
                 points.append(np.roll(np.array((x * 1e-3, y * 1e-3, z * 1e-3)), 1))
                 pins.append(np.array((x * 1e-3, y * 1e-3, z * 1e-6, t * 1e-9)))
+                
+        normal = QtGui.QVector3D(
+            self.matrix.column(2).x(),
+            self.matrix.column(2).y(),
+            self.matrix.column(2).z()
+        ).normalized()
+        point_on_plane = QtGui.QVector3D(
+            self.matrix.column(3).x(),
+            self.matrix.column(3).y(),
+            self.matrix.column(3).z()
+        )
+
+        normal_vec = np.array([normal.x(), normal.y(), normal.z()])
+        start = np.array([point_on_plane.x(), point_on_plane.y(), point_on_plane.z()])  
+        end = start + normal_vec
+        line_points = np.array([start, end])
+
+        if not hasattr(self, "normal"):
+            self.normal = gl.GLLinePlotItem(pos=line_points)
+            self.view.addItem(self.normal)
+        
+        self.normal.setData(pos=line_points)
 
         if points:
             pos = np.array(points)
@@ -388,8 +413,17 @@ class MainWindow(QtWidgets.QWidget):
                 self.z = 0
 
             colors = []
-            for row in pos:
-                if row[0] > self.z:
+            for idx, row in enumerate(pos):
+                v = QtGui.QVector3D(*row) - point_on_plane
+                d = QtGui.QVector3D.dotProduct(v, normal)
+                # if row[0] > self.z:
+                #     colors.append((0, 1, 0, 1))
+                # else:
+                #     colors.append((1, 0, 0, 1))
+                if idx == 0:
+                    print(v)
+                    print(d)
+                if d > 0:
                     colors.append((0, 1, 0, 1))
                 else:
                     colors.append((1, 0, 0, 1))
@@ -398,19 +432,25 @@ class MainWindow(QtWidgets.QWidget):
 
         else:
             self.scatter.setData(pos=np.zeros((0, 3)), color=(0, 0, 0, 1))
+        
+        self.pins = np.array(pins)
 
-        self.calculate_angle(np.array(pins))
-
-    def calculate_angle(self, pins):
-        angle, std = Tilt(
-            velocity=self.velocity_input.value(), pins=pins
-        ).iterate_tilt_calculation(
-            # save_data=False
-            save_data=True
+    def calculate_angle(self):
+        pins = self.pins
+        tilt = Tilt(velocity=self.velocity_input.value(), pins=pins)
+        angle, std = tilt.iterate_tilt_calculation(
+            save_data=False
+            # save_data=True
         )
+        self.magnified_tilt_angle, _ = tilt.magnify_impact_axis(magnification=1e3).iterate_tilt_calculation(save_data=False)
+        
+        print(angle, std, self.magnified_tilt_angle)
+        if self.magnified_tilt_angle is not None:
+            self.move_plane(t=self.time)
 
-        text = f"{'Average'}: {angle * 1e3:>10.3f}+-{std * 1e3:.3f} mrad"
-        self.result.setText(text)
+        if angle is not None and std is not None:
+            text = f"{'Average'}: {angle * 1e3:>10.3f}±{std * 1e3:.3f} mrad"
+            self.result.setText(text)
 
     def closeEvent(self, event):
         for i, row in enumerate(self.input_rows):

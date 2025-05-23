@@ -8,6 +8,7 @@ class Tilt:
     def __init__(self, velocity, pins=None):
         self.v = velocity * 1e3
         self.pins = pins
+        self.magnification = 1
 
     def import_file(self, file):
         self.file = file
@@ -28,7 +29,8 @@ class Tilt:
         angles = []
         outstr = ""
         for i, combo in enumerate(combinations(list(range(1, len(self.pins) + 1)), 3)):
-            print("++++++++++++++++++++++")
+            if __name__=="__main__":
+                print("++++++++++++++++++++++")
 
             retstr, retval = self.calculate_tilt(pins=np.array(combo))
 
@@ -39,21 +41,30 @@ class Tilt:
 
             outstr += retstr + "\n"
 
-        std = np.std(angles)
-        o = (
-            "-" * 60
-            + "\n"
-            + f"{'Average':<12}: {avg * 1e3:>10.3f}+-{std * 1e3:.3f} mrad"
-        )
-        outstr += o
+        if len(angles) > 1:
+            std = np.std(angles)
+            avg = np.mean(angles)
+            o = (
+                "-" * 60
+                + "\n"
+                + f"{'Average':<12}: {avg * 1e3:>10.3f}+-{std * 1e3:.3f} mrad"
+            )
+            outstr += o
 
-        print(o, sep="\n")
-        if save_data:
-            # outfile = Path(self.file).parent.joinpath("calculated_tilt.txt")
-            outfile = Path("/Users/Brad/Desktop").joinpath("calculated_tilt.txt")
-            outfile.write_text(outstr)
+            if __name__=="__main__":
+                print(o, sep="\n")
+            if save_data:
+                # outfile = Path(self.file).parent.joinpath("calculated_tilt.txt")
+                outfile = Path("/Users/Brad/Desktop").joinpath("calculated_tilt.txt")
+                outfile.write_text(outstr)
 
-        return avg, std
+            return avg, std
+        
+        return None, None
+    
+    def magnify_impact_axis(self, magnification=1e3):
+        self.magnification = magnification
+        return self
 
     def calculate_tilt(self, pins=(1, 2, 3)):
         pins = tuple(int(ii) for ii in pins)
@@ -63,14 +74,16 @@ class Tilt:
             # d = self.data.loc[self.data["pin"]==pin]
             # impact[pin] = np.array((d["x"], d["y"], d[self.time_col]*self.v - d["z"])).ravel()
             p = pin - 1
+            print(self.magnification)
             impact_coords[pin] = np.array(
                 (
                     self.pins[p, 0],
                     self.pins[p, 1],
-                    self.pins[p, 3] * self.v - self.pins[p, 2],
+                    (self.pins[p, 3] * self.v - self.pins[p, 2]) * self.magnification,
                 )
             )  # impact z position is the time delay*velocity minus the expected distance (measured with drop gauge)
-            print(impact_coords[pin])
+            if __name__=="__main__":
+                print(impact_coords[pin])
 
         angles_for_plane = []
         for i in range(3):
