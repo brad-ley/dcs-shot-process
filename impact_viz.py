@@ -293,9 +293,9 @@ class MainWindow(QtWidgets.QWidget):
             self.velocity_input.setValue(float(self.settings.value("velocity")))
             self.velocity_input.blockSignals(False)
         if self.settings.value("time_slider", b""):
-            self.slider.blockSignals(True)
+            # self.slider.blockSignals(True)
             self.slider.setValue(int(self.settings.value("time_slider")))
-            self.slider.blockSignals(False)
+            # self.slider.blockSignals(False)
 
         self.plot_points()
         self.calculate_angle()
@@ -312,7 +312,11 @@ class MainWindow(QtWidgets.QWidget):
         self.matrix.translate(
             self.z, 0, 0
         )  # need to scale up to "zoom" in
-        self.matrix.rotate(self.magnified_tilt_angle * 180 / np.pi, 1, 1, 1)
+        if hasattr(self, "magnified_normal_vecs_avg"):
+            rotation_axis = np.cross(np.array([1,0,0]), np.roll(self.magnified_normal_vecs_avg, 1))
+            self.matrix.rotate(self.magnified_tilt_angle * 180 / np.pi, QtGui.QVector3D(*rotation_axis))
+            # self.matrix.rotate(0, QtGui.QVector3D(*rotation_axis))
+
         self.plane.setTransform(self.matrix)
 
     def make_circular_plane(self, radius=10e-3, segments=60):
@@ -386,9 +390,9 @@ class MainWindow(QtWidgets.QWidget):
                 pins.append(np.array((x * 1e-3, y * 1e-3, z * 1e-6, t * 1e-9)))
                 
         normal = QtGui.QVector3D(
-            self.matrix.column(2).x(),
-            self.matrix.column(2).y(),
-            self.matrix.column(2).z()
+            self.matrix.column(0).x(),
+            self.matrix.column(0).y(),
+            self.matrix.column(0).z()
         ).normalized()
         point_on_plane = QtGui.QVector3D(
             self.matrix.column(3).x(),
@@ -401,11 +405,11 @@ class MainWindow(QtWidgets.QWidget):
         end = start + normal_vec
         line_points = np.array([start, end])
 
-        if not hasattr(self, "normal"):
-            self.normal = gl.GLLinePlotItem(pos=line_points)
-            self.view.addItem(self.normal)
+        # if not hasattr(self, "normal"):
+        #     self.normal = gl.GLLinePlotItem(pos=line_points)
+        #     self.view.addItem(self.normal)
         
-        self.normal.setData(pos=line_points)
+        # self.normal.setData(pos=line_points)
 
         if points:
             pos = np.array(points)
@@ -416,13 +420,6 @@ class MainWindow(QtWidgets.QWidget):
             for idx, row in enumerate(pos):
                 v = QtGui.QVector3D(*row) - point_on_plane
                 d = QtGui.QVector3D.dotProduct(v, normal)
-                # if row[0] > self.z:
-                #     colors.append((0, 1, 0, 1))
-                # else:
-                #     colors.append((1, 0, 0, 1))
-                if idx == 0:
-                    print(v)
-                    print(d)
                 if d > 0:
                     colors.append((0, 1, 0, 1))
                 else:
@@ -438,18 +435,25 @@ class MainWindow(QtWidgets.QWidget):
     def calculate_angle(self):
         pins = self.pins
         tilt = Tilt(velocity=self.velocity_input.value(), pins=pins)
-        angle, std = tilt.iterate_tilt_calculation(
+        angle, std, normal_vecs = tilt.iterate_tilt_calculation(
             save_data=False
             # save_data=True
         )
-        self.magnified_tilt_angle, _ = tilt.magnify_impact_axis(magnification=1e3).iterate_tilt_calculation(save_data=False)
+        _, _, magnified_normal_vecs = tilt.magnify_impact_axis(magnification=1e3).iterate_tilt_calculation(save_data=False)
         
-        print(angle, std, self.magnified_tilt_angle)
+        avg_normalized = np.mean(normal_vecs, axis=0) / np.linalg.norm(np.mean(normal_vecs, axis=0))
+        angle2 = np.arccos(avg_normalized[2])
+        mean_resultant_length = np.linalg.norm(np.sum(normal_vecs, axis=0))/normal_vecs.shape[0]
+        std2 = np.sqrt(-2 * np.log(mean_resultant_length)) # this gives something approximating the angular error, Mardia, K. V., & Jupp, P. E. (2000). Directional Statistics. Wiley. ISBN: 978-0471953333 chap 9
+
+        self.magnified_normal_vecs_avg = np.mean(magnified_normal_vecs, axis=0) / np.linalg.norm(np.mean(magnified_normal_vecs, axis=0))
+        self.magnified_tilt_angle = np.arccos(self.magnified_normal_vecs_avg[2])
+        
         if self.magnified_tilt_angle is not None:
             self.move_plane(t=self.time)
 
         if angle is not None and std is not None:
-            text = f"{'Average'}: {angle * 1e3:>10.3f}±{std * 1e3:.3f} mrad"
+            text = f"{'Average'}: {angle2 * 1e3:>10.3f}±{std2 * 1e3:.3f} mrad"
             self.result.setText(text)
 
     def closeEvent(self, event):
