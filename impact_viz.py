@@ -32,6 +32,23 @@ SPINBOX_STYLESHEET = """
     }
 """
 
+COMBO_STYLESHEET = """
+QComboBox {
+    padding-right: 20px;  /* Space for the arrow */
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: 1px solid gray;
+}
+
+QComboBox::down-arrow {
+    image: url(:/qt-project.org/styles/commonstyle/images/arrowdown-16.png);
+}
+"""
+
 
 class PointInputRow(QtWidgets.QWidget):
     """A single row of x, y, z, time inputs."""
@@ -121,6 +138,12 @@ class MainWindow(QtWidgets.QWidget):
         self.velocity_input.setFixedWidth(80)
 
         self.velocity_input.setStyleSheet(SPINBOX_STYLESHEET)
+        
+        mode_label = QtWidgets.QLabel("Mode: ")
+        self.color_method = QtWidgets.QComboBox()
+        self.color_method.addItems(["Timing     ▼", "Location  ▼"])
+        self.color_method.currentTextChanged.connect(self.plot_points)
+        # self.color_method.setStyleSheet(COMBO_STYLESHEET)
 
         velocity_label.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed,
@@ -134,6 +157,8 @@ class MainWindow(QtWidgets.QWidget):
         # velocity_row.setSpacing(5)
         velocity_row.addWidget(velocity_label)
         velocity_row.addWidget(self.velocity_input)
+        velocity_row.addWidget(mode_label)
+        velocity_row.addWidget(self.color_method)
         self.form_layout.addLayout(velocity_row)
 
         coordinate_row = QtWidgets.QHBoxLayout()
@@ -288,6 +313,7 @@ class MainWindow(QtWidgets.QWidget):
         if len(self.input_rows) == 0:
             self.add_input_row()
 
+        self.velocity_input.valueChanged.connect(self.plot_points)
         if self.settings.value("velocity", b""):
             self.velocity_input.blockSignals(True)
             self.velocity_input.setValue(float(self.settings.value("velocity")))
@@ -296,15 +322,21 @@ class MainWindow(QtWidgets.QWidget):
             # self.slider.blockSignals(True)
             self.slider.setValue(int(self.settings.value("time_slider")))
             # self.slider.blockSignals(False)
+        if self.settings.value("color_method", type=int) is not None:
+            self.color_method.blockSignals(True)
+            self.color_method.setCurrentIndex(int(self.settings.value("color_method")))
+            self.color_method.blockSignals(False)
 
         self.plot_points()
-        self.calculate_angle()
 
     def on_slider_changed(self, val):
+        # if hasattr(self, "pins"):
+        #     val -= np.median(self.pins[:, 3]) * 1e9
         self.time = val / 1e1
         self.slider_value.setText(f"Time: {self.time:.1f} ns")
         self.move_plane(t=self.time)
         self.plot_points()
+        self.calculate_angle()
 
     def move_plane(self, t):
         self.z = -self.velocity_input.value() * 1e3 * t * 1e-9 * 1e3 
@@ -314,7 +346,7 @@ class MainWindow(QtWidgets.QWidget):
         )  # need to scale up to "zoom" in
         if hasattr(self, "magnified_normal_vecs_avg"):
             rotation_axis = np.cross(np.array([1,0,0]), np.roll(self.magnified_normal_vecs_avg, 1))
-            self.matrix.rotate(self.magnified_tilt_angle * 180 / np.pi, QtGui.QVector3D(*rotation_axis))
+            self.matrix.rotate(-self.magnified_tilt_angle * 180 / np.pi, QtGui.QVector3D(*rotation_axis))
             # self.matrix.rotate(0, QtGui.QVector3D(*rotation_axis))
 
         self.plane.setTransform(self.matrix)
@@ -360,7 +392,7 @@ class MainWindow(QtWidgets.QWidget):
     def add_input_row(self, id=None):
         row = PointInputRow(id=id)
         row.values_changed.connect(self.plot_points)
-        row.values_changed.connect(self.calculate_angle)
+        # row.values_changed.connect(self.calculate_angle)
         row.delete_clicked.connect(self.delete_input_row)
         self.input_rows.append(row)
         self.form_layout.insertWidget(
@@ -411,6 +443,8 @@ class MainWindow(QtWidgets.QWidget):
         
         # self.normal.setData(pos=line_points)
 
+        self.pins = np.array(pins)
+
         if points:
             pos = np.array(points)
             if not hasattr(self, "z"):
@@ -420,17 +454,24 @@ class MainWindow(QtWidgets.QWidget):
             for idx, row in enumerate(pos):
                 v = QtGui.QVector3D(*row) - point_on_plane
                 d = QtGui.QVector3D.dotProduct(v, normal)
-                if d > 0:
-                    colors.append((0, 1, 0, 1))
-                else:
-                    colors.append((1, 0, 0, 1))
+                if self.color_method.currentText() == "Location  ▼":
+                    if d > 0:
+                        colors.append((0, 1, 0, 1))
+                    else:
+                        colors.append((1, 0, 0, 1))
+                elif self.color_method.currentText() == "Timing     ▼":
+                    if self.time + np.median(self.pins[:, 3])*1e9 > self.pins[idx, 3] * 1e9: # is this really the best way? TODO
+                    # if self.time > self.pins[idx, 3] * 1e9: # is this really the best way? TODO
+                        colors.append((0, 1, 0, 1))
+                    else:
+                        colors.append((1, 0, 0, 1))
 
             self.scatter.setData(pos=pos, color=np.array(colors))
 
         else:
             self.scatter.setData(pos=np.zeros((0, 3)), color=(0, 0, 0, 1))
         
-        self.pins = np.array(pins)
+        self.calculate_angle()
 
     def calculate_angle(self):
         pins = self.pins
@@ -441,20 +482,41 @@ class MainWindow(QtWidgets.QWidget):
         )
         _, _, magnified_normal_vecs = tilt.magnify_impact_axis(magnification=1e3).iterate_tilt_calculation(save_data=False)
         
-        avg_normalized = np.mean(normal_vecs, axis=0) / np.linalg.norm(np.mean(normal_vecs, axis=0))
-        angle2 = np.arccos(avg_normalized[2])
-        mean_resultant_length = np.linalg.norm(np.sum(normal_vecs, axis=0))/normal_vecs.shape[0]
-        std2 = np.sqrt(-2 * np.log(mean_resultant_length)) # this gives something approximating the angular error, Mardia, K. V., & Jupp, P. E. (2000). Directional Statistics. Wiley. ISBN: 978-0471953333 chap 9
+        try:
+            avg_normalized = np.mean(normal_vecs, axis=0) / np.linalg.norm(np.mean(normal_vecs, axis=0))
+            angle2 = np.arccos(avg_normalized[2])
+            mean_resultant_length = np.linalg.norm(np.sum(normal_vecs, axis=0))/normal_vecs.shape[0]
+            std2 = np.sqrt(-2 * np.log(mean_resultant_length)) # this gives something approximating the angular error, Mardia, K. V., & Jupp, P. E. (2000). Directional Statistics. Wiley. ISBN: 978-0471953333 chap 9
 
-        self.magnified_normal_vecs_avg = np.mean(magnified_normal_vecs, axis=0) / np.linalg.norm(np.mean(magnified_normal_vecs, axis=0))
-        self.magnified_tilt_angle = np.arccos(self.magnified_normal_vecs_avg[2])
+            self.magnified_normal_vecs_avg = np.mean(magnified_normal_vecs, axis=0) / np.linalg.norm(np.mean(magnified_normal_vecs, axis=0))
+            self.magnified_tilt_angle = np.arccos(self.magnified_normal_vecs_avg[2])
+            
+            if self.magnified_tilt_angle is not None:
+                self.move_plane(t=self.time)
+
+            if angle2 is not None and std2 is not None:
+                if np.abs(np.pi - angle2) < angle2:
+                    angle2 -= np.pi
+                    self.magnified_tilt_angle -= np.pi
+                
+                angle2 *= 1e3
+                std2 *= 1e3
+
+                std2_temp = std2
+                c = 0
+                if std != 0:
+                    while int(std2_temp) < 1:
+                        std2_temp *= 10
+                        c += 1
+                else:
+                    c = 2
+
+                text = f"{'Average'}: {int(angle2 * 10**c)/10**c:>10.{c}f}±{int(std2 * 10**c)/10**c:.{c}f} mrad"
+        except np.exceptions.AxisError:
+            text = f"Error: not enough points entered"
+        self.result.setText(text)
         
-        if self.magnified_tilt_angle is not None:
-            self.move_plane(t=self.time)
-
-        if angle is not None and std is not None:
-            text = f"{'Average'}: {angle2 * 1e3:>10.3f}±{std2 * 1e3:.3f} mrad"
-            self.result.setText(text)
+        pass
 
     def closeEvent(self, event):
         for i, row in enumerate(self.input_rows):
@@ -463,6 +525,7 @@ class MainWindow(QtWidgets.QWidget):
 
         self.settings.setValue("velocity", self.velocity_input.value())
         self.settings.setValue("time_slider", self.slider.value())
+        self.settings.setValue("color_method", self.color_method.currentIndex())
 
         self.settings.setValue("geometry", self.saveGeometry())
         super().closeEvent(event)

@@ -40,7 +40,7 @@ class Tilt:
                 angles.append(retval)
                 avg = retval + avg * i
                 avg /= i + 1
-
+                
             outstr += retstr + "\n"
             
         normal_vecs = np.array(normal_vecs)
@@ -49,7 +49,7 @@ class Tilt:
                 normal_vecs[idx, :] = -1 * vec
                 # pass
 
-        if len(angles) > 1:
+        if len(angles) > 0:
             std = np.std(angles)
             avg = np.mean(angles)
             o = (
@@ -86,7 +86,7 @@ class Tilt:
                 (
                     self.pins[p, 0],
                     self.pins[p, 1],
-                    (self.pins[p, 3] * self.v - self.pins[p, 2]) * self.magnification,
+                    (self.pins[p, 3] * (-self.v) - self.pins[p, 2]) * self.magnification,
                 )
             )  # impact z position is the time delay*velocity minus the expected distance (measured with drop gauge)
             if __name__=="__main__":
