@@ -452,16 +452,15 @@ class MainWindow(QtWidgets.QWidget):
 
             colors = []
             for idx, row in enumerate(pos):
-                v = QtGui.QVector3D(*row) - point_on_plane
-                d = QtGui.QVector3D.dotProduct(v, normal)
                 if self.color_method.currentText() == "Location  ▼":
-                    if d > 0:
+                    v = QtGui.QVector3D(*row) - point_on_plane
+                    d = QtGui.QVector3D.dotProduct(v, normal)
+                    if d < 0:
                         colors.append((0, 1, 0, 1))
                     else:
                         colors.append((1, 0, 0, 1))
                 elif self.color_method.currentText() == "Timing     ▼":
-                    if self.time + np.median(self.pins[:, 3])*1e9 > self.pins[idx, 3] * 1e9: # is this really the best way? TODO
-                    # if self.time > self.pins[idx, 3] * 1e9: # is this really the best way? TODO
+                    if self.time + np.median(self.pins[:, 3])*1e9 > self.pins[idx, 3] * 1e9: # TODO: need to figure out a nice way to do the timing mode. maybe find the earliest time that a collision occurs and increment the timing from there? 
                         colors.append((0, 1, 0, 1))
                     else:
                         colors.append((1, 0, 0, 1))
@@ -497,7 +496,7 @@ class MainWindow(QtWidgets.QWidget):
             if angle2 is not None and std2 is not None:
                 if np.abs(np.pi - angle2) < angle2:
                     angle2 -= np.pi
-                    self.magnified_tilt_angle -= np.pi
+                #     self.magnified_tilt_angle -= np.pi
                 
                 angle2 *= 1e3
                 std2 *= 1e3
@@ -513,7 +512,7 @@ class MainWindow(QtWidgets.QWidget):
 
                 text = f"{'Average'}: {int(angle2 * 10**c)/10**c:>10.{c}f}±{int(std2 * 10**c)/10**c:.{c}f} mrad"
         except np.exceptions.AxisError:
-            text = f"Error: not enough points entered"
+            text = f"Error: not enough points entered or points do not generate well-defined plane"
         self.result.setText(text)
         
         pass

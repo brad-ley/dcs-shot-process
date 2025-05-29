@@ -105,7 +105,7 @@ class Tilt:
         pins = np.roll(pins, maxind)
         angle_spanning_plane = angles_for_plane[maxind]
 
-        if 43 < angle_spanning_plane * 180 / np.pi < 137:
+        if 30 < angle_spanning_plane * 180 / np.pi < 150:
             normal = np.cross(
                 impact_coords[pins[1]] - impact_coords[pins[0]],
                 impact_coords[pins[2]] - impact_coords[pins[0]],
