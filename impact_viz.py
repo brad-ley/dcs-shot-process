@@ -275,8 +275,8 @@ try:
             # Create and configure slider
             self.slider_row = QtWidgets.QHBoxLayout()
             self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-            self.slider.setMinimum(-250)
-            self.slider.setMaximum(250)
+            self.slider.setMinimum(-350)
+            self.slider.setMaximum(350)
             self.slider.setValue(0)
             self.slider.setTickPosition(QtWidgets.QSlider.TickPosition.TicksBelow)
             # self.slider.setTickInterval(1)
@@ -300,11 +300,11 @@ try:
             self.slider.valueChanged.connect(self.on_slider_changed)
 
             if not hasattr(self, "plane"):
-                self.make_circular_plane(radius=35e-3)
+                # magnification_ratios = {1:10e-3, 10:20e-3, 100:30e-3, 1000:40e-3}
+                self.make_circular_plane(radius=(1+2*self.magnification.value())*10*1e-3)
                 
-            # TODO: allow for customized zoom along z axis
+            # TODO: sometimes gets stuck with new Timing mode, i think doesn't reset properly
             # TODO: input from .xlsx position/delay file
-            # TODO: enable proper timing-based plotting
 
             # Use a container widget to add to the main layout
             right_container = QtWidgets.QWidget()
@@ -377,13 +377,15 @@ try:
             # self.plot_points()
         
         def magnification_changed(self):
-            self.init_time = None
+            # self.init_time = None
             self.setWindowTitle(f"Impact visualization tool ({int(10**self.magnification.value())}x zoom along impact axis)")
             self.mag_value.setText(f"{10**self.magnification.value()}x")
+            self.modify_plane_size(radius=(1+2*self.magnification.value())*10*1e-3)
             self.plot_points()
             
         def set_time_text(self):
-            if self.init_time is not None:
+            if False:
+            # if self.init_time is not None:
                 text = f"Time: {self.time - self.init_time:.1f} ns"
             else:
                 text = f"Time: {self.time:.1f} ns"
@@ -409,12 +411,11 @@ try:
                 # self.matrix.rotate(0, QtGui.QVector3D(*rotation_axis))
 
             self.plane.setTransform(self.matrix)
-
-        def make_circular_plane(self, radius=10e-3, segments=60):
+            
+        def create_mesh_data(self, radius=10e-3, segments=60):
             z = 0
             vertices = [[z, 0, 0]]
 
-            # Circle perimeter points
             for i in range(segments + 1):
                 angle = 2 * np.pi * i / segments
                 x = radius * np.cos(angle)
@@ -428,17 +429,29 @@ try:
             for i in range(1, segments + 1):
                 faces.append([i + 1, i, 0])
             faces = np.array(faces)
+            
+            return gl.MeshData(vertexes=vertices, faces=faces)
 
+        def make_circular_plane(self, radius=30e-3):
             # Create the mesh
             self.plane = gl.GLMeshItem(
-                vertexes=vertices,
-                faces=faces,
+                vertexes=[],
+                faces=[],
                 color=(0.3, 0.6, 1.0, 0.3),
                 smooth=True,
                 drawEdges=False,
             )
+
+            # Circle perimeter points
+            meshdata = self.create_mesh_data(radius=radius)
+            self.plane.setMeshData(vertexes=meshdata.vertexes(), faces=meshdata.faces())
+
             self.plane.setGLOptions("translucent")
             self.view.addItem(self.plane)
+            
+        def modify_plane_size(self, radius=30e-3):
+            meshdata = self.create_mesh_data(radius=radius)
+            self.plane.setMeshData(vertexes=meshdata.vertexes(), faces=meshdata.faces())
 
         def parse_val(self, val):
             """return int if int, if has float val, return str() of float"""
@@ -501,7 +514,11 @@ try:
             
             # self.normal.setData(pos=line_points)
 
-            self.pins = np.array(pins)
+            if not hasattr(self, "pins"):
+                self.pins = np.array(pins)
+            elif not np.array_equal(np.array(pins), self.pins):
+                self.pins = np.array(pins)
+                self.init_time = None
 
             if points:
                 pos = np.array(points)
@@ -522,11 +539,13 @@ try:
                         # else:
                         #     print(self.time, self.init_time, self.pins[idx, 3]*1e9)
                         #     if self.time > self.pins[idx, 3] * 1e9: # TODO: need to figure out a nice way to do the timing mode. maybe find the earliest time that a collision occurs and increment the timing from there? 
-                        if self.init_time is None and d > 0:
+                        if self.init_time is None and self.pins[idx, 3] == np.min(self.pins[:, 3]) and d > 0:
                             self.init_time = np.copy(self.time)
                             self.set_time_text()
-                        if self.init_time is not None and self.time - self.init_time >= self.pins[idx, 3] * 1e9:
+                        if self.init_time is not None and self.time - self.init_time >= (self.pins[idx, 3] - np.min(self.pins[:, 3])) * 1e9:
                             c = (0, 1, 0, 1)
+                            
+                        # print(self.init_time, self.time, self.pins[idx, 3], np.min(self.pins[:, 3]))
 
                     colors.append(c)
 

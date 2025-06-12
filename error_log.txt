@@ -1,5 +1,10 @@
 Traceback (most recent call last):
-  File "C:\Users\price_adm\Documents\Research\Code\Python\shotProcessing\impact_viz.py", line 56, in <module>
-    class PointInputRow(QtWidgets.QWidget):
-                        ^^^^^^^^^
-NameError: name 'QtWidgets' is not defined
+  File "C:\Users\price_adm\Documents\Research\Code\Python\shotProcessing\impact_viz.py", line 615, in <module>
+    window = MainWindow()
+  File "C:\Users\price_adm\Documents\Research\Code\Python\shotProcessing\impact_viz.py", line 304, in __init__
+    self.make_circular_plane()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\price_adm\Documents\Research\Code\Python\shotProcessing\impact_viz.py", line 446, in make_circular_plane
+    self.plane.setMeshData(meshdata)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+TypeError: GLMeshItem.setMeshData() takes 1 positional argument but 2 were given
