@@ -79,16 +79,20 @@ class PointInputRow(QtWidgets.QWidget):
         ):
             # widget.setPlaceholderText(label)
             widget.setMinimumWidth(65)
-            if label not in ["z (um)", "t (ns)"]:
-                widget.setDecimals(4)
-            else:
+            if label == "z (um)":
                 widget.setDecimals(1)
+                widget.setRange(-50, 50)
+            elif label == "t (ns)":
+                widget.setDecimals(2)
+                widget.setRange(-200, 200)
+            else:
+                widget.setDecimals(4)
+                widget.setRange(-10, 10)
             widget.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             widget.setSizePolicy(
                 QtWidgets.QSizePolicy.Policy.Expanding,
                 QtWidgets.QSizePolicy.Policy.Fixed,
             )
-            widget.setRange(-20, 20)
             widget.setStyleSheet(SPINBOX_STYLESHEET)
             widget.textChanged.connect(self.values_changed.emit)
 
@@ -134,7 +138,7 @@ class MainWindow(QtWidgets.QWidget):
         self.velocity_input = QtWidgets.QDoubleSpinBox()
         self.velocity_input.setRange(0, 7)
         self.velocity_input.setValue(5)
-        self.velocity_input.setDecimals(2)
+        self.velocity_input.setDecimals(3)
         self.velocity_input.setFixedWidth(80)
 
         self.velocity_input.setStyleSheet(SPINBOX_STYLESHEET)
@@ -161,6 +165,32 @@ class MainWindow(QtWidgets.QWidget):
         velocity_row.addWidget(self.color_method)
         self.form_layout.addLayout(velocity_row)
 
+        magnification_row = QtWidgets.QHBoxLayout()
+        self.magnification = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.magnification.setMinimum(0)
+        self.magnification.setMaximum(3)
+        self.magnification.setValue(3)
+        self.magnification.setTickPosition(QtWidgets.QSlider.TickPosition.TicksBelow)
+        self.magnification.setTickInterval(1)
+
+        self.magnification.valueChanged.connect(self.magnification_changed)
+
+        self.mag_value = QtWidgets.QLabel(f"{10**self.magnification.value()}x")
+        self.mag_value.setFixedWidth(90)
+
+        magnification_row.addWidget(self.mag_value)
+        magnification_row.addWidget(self.magnification)
+
+        mag_widget = QtWidgets.QWidget()
+        mag_widget.setLayout(magnification_row)
+
+        self.form_layout.addWidget(mag_widget)
+        
+        line = QtWidgets.QFrame()
+        line.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        line.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        self.form_layout.addWidget(line)
+        
         coordinate_row = QtWidgets.QHBoxLayout()
         labels = ["x (mm)", "y (mm)", "z (um)", "t (ns)", "Delete"]
         for label in labels:
@@ -248,8 +278,11 @@ class MainWindow(QtWidgets.QWidget):
         self.slider.setTickPosition(QtWidgets.QSlider.TickPosition.TicksBelow)
         # self.slider.setTickInterval(1)
 
+        self.init_time = None
         self.time = self.slider.value() / 1e1
-        self.slider_value = QtWidgets.QLabel(f"Time: {self.time:.1f} ns")
+        # self.slider_value = QtWidgets.QLabel(f"Time: {self.time:.1f} ns")
+        self.slider_value = QtWidgets.QLabel()
+        self.set_time_text()
         self.slider_value.setFixedWidth(90)
 
         self.slider_row.addWidget(self.slider_value)
@@ -264,7 +297,11 @@ class MainWindow(QtWidgets.QWidget):
         self.slider.valueChanged.connect(self.on_slider_changed)
 
         if not hasattr(self, "plane"):
-            self.make_circular_plane()
+            self.make_circular_plane(radius=35e-3)
+            
+        # TODO: allow for customized zoom along z axis
+        # TODO: input from .xlsx position/delay file
+        # TODO: enable proper timing-based plotting
 
         # Use a container widget to add to the main layout
         right_container = QtWidgets.QWidget()
@@ -274,7 +311,6 @@ class MainWindow(QtWidgets.QWidget):
         main_layout.addWidget(self.form_widget, stretch=2)
         main_layout.addWidget(right_container, stretch=5)
 
-        self.setWindowTitle("Impact visualization tool (1000x zoom along impact axis)")
         self.resize(1200, 600)
 
         self.settings = QtCore.QSettings(
@@ -292,6 +328,7 @@ class MainWindow(QtWidgets.QWidget):
             result_row = QtWidgets.QHBoxLayout()
             result_row.addWidget(self.result)
             self.form_layout.addLayout(result_row)
+            
 
         row_keys = [k for k in self.settings.allKeys() if k.startswith("row_")]
         row_keys.sort()
@@ -309,6 +346,11 @@ class MainWindow(QtWidgets.QWidget):
                 row.z_input.setValue(self.parse_val(z))
                 row.t_input.setValue(self.parse_val(t))
                 row.blockSignals(False)
+            
+        if self.settings.value("magnification"):
+            self.magnification.setValue(int(self.settings.value("magnification")))
+
+        self.setWindowTitle(f"Impact visualization tool ({int(10**self.magnification.value())}x zoom along impact axis)")
 
         if len(self.input_rows) == 0:
             self.add_input_row()
@@ -322,24 +364,38 @@ class MainWindow(QtWidgets.QWidget):
             # self.slider.blockSignals(True)
             self.slider.setValue(int(self.settings.value("time_slider")))
             # self.slider.blockSignals(False)
+        else:
+            self.slider.setValue(0)
         if self.settings.value("color_method", type=int) is not None:
             self.color_method.blockSignals(True)
             self.color_method.setCurrentIndex(int(self.settings.value("color_method")))
             self.color_method.blockSignals(False)
 
+        # self.plot_points()
+    
+    def magnification_changed(self):
+        self.init_time = None
+        self.setWindowTitle(f"Impact visualization tool ({int(10**self.magnification.value())}x zoom along impact axis)")
+        self.mag_value.setText(f"{10**self.magnification.value()}x")
         self.plot_points()
+        
+    def set_time_text(self):
+        if self.init_time is not None:
+            text = f"Time: {self.time - self.init_time:.1f} ns"
+        else:
+            text = f"Time: {self.time:.1f} ns"
+        self.slider_value.setText(text)
 
     def on_slider_changed(self, val):
         # if hasattr(self, "pins"):
         #     val -= np.median(self.pins[:, 3]) * 1e9
         self.time = val / 1e1
-        self.slider_value.setText(f"Time: {self.time:.1f} ns")
+        self.set_time_text()
         self.move_plane(t=self.time)
         self.plot_points()
-        self.calculate_angle()
 
     def move_plane(self, t):
-        self.z = -self.velocity_input.value() * 1e3 * t * 1e-9 * 1e3 
+        self.z = -self.velocity_input.value() * 1e3 * t * 1e-9 * 10**self.magnification.value()
         self.matrix = QtGui.QMatrix4x4()
         self.matrix.translate(
             self.z, 0, 0
@@ -392,7 +448,6 @@ class MainWindow(QtWidgets.QWidget):
     def add_input_row(self, id=None):
         row = PointInputRow(id=id)
         row.values_changed.connect(self.plot_points)
-        # row.values_changed.connect(self.calculate_angle)
         row.delete_clicked.connect(self.delete_input_row)
         self.input_rows.append(row)
         self.form_layout.insertWidget(
@@ -418,7 +473,7 @@ class MainWindow(QtWidgets.QWidget):
 
             if values:
                 x, y, z, t = values
-                points.append(np.roll(np.array((x * 1e-3, y * 1e-3, z * 1e-3)), 1))
+                points.append(np.roll(np.array((x * 1e-3, y * 1e-3, z * 1e-6 * 10**self.magnification.value())), 1))
                 pins.append(np.array((x * 1e-3, y * 1e-3, z * 1e-6, t * 1e-9)))
                 
         normal = QtGui.QVector3D(
@@ -452,24 +507,32 @@ class MainWindow(QtWidgets.QWidget):
 
             colors = []
             for idx, row in enumerate(pos):
+                v = QtGui.QVector3D(*row) - point_on_plane
+                d = QtGui.QVector3D.dotProduct(v, normal)
+                c = (1, 0, 0, 1)
                 if self.color_method.currentText() == "Location  ▼":
-                    v = QtGui.QVector3D(*row) - point_on_plane
-                    d = QtGui.QVector3D.dotProduct(v, normal)
-                    if d < 0:
-                        colors.append((0, 1, 0, 1))
-                    else:
-                        colors.append((1, 0, 0, 1))
+                    if d > 0:
+                        c = (0, 1, 0, 1)
                 elif self.color_method.currentText() == "Timing     ▼":
-                    if self.time + np.median(self.pins[:, 3])*1e9 > self.pins[idx, 3] * 1e9: # TODO: need to figure out a nice way to do the timing mode. maybe find the earliest time that a collision occurs and increment the timing from there? 
-                        colors.append((0, 1, 0, 1))
-                    else:
-                        colors.append((1, 0, 0, 1))
+                    # if self.init_time is None:
+                    #     self.init_time = self.time
+                    # else:
+                    #     print(self.time, self.init_time, self.pins[idx, 3]*1e9)
+                    #     if self.time > self.pins[idx, 3] * 1e9: # TODO: need to figure out a nice way to do the timing mode. maybe find the earliest time that a collision occurs and increment the timing from there? 
+                    print(self.init_time, self.time, self.pins[idx, 3]*1e9)
+                    if self.init_time is None and d > 0:
+                        self.init_time = np.copy(self.time)
+                        self.set_time_text()
+                    if self.init_time is not None and self.time - self.init_time >= self.pins[idx, 3] * 1e9:
+                        c = (0, 1, 0, 1)
+
+                colors.append(c)
 
             self.scatter.setData(pos=pos, color=np.array(colors))
 
         else:
             self.scatter.setData(pos=np.zeros((0, 3)), color=(0, 0, 0, 1))
-        
+
         self.calculate_angle()
 
     def calculate_angle(self):
@@ -479,7 +542,12 @@ class MainWindow(QtWidgets.QWidget):
             save_data=False
             # save_data=True
         )
-        _, _, magnified_normal_vecs = tilt.magnify_impact_axis(magnification=1e3).iterate_tilt_calculation(save_data=False)
+        _, _, magnified_normal_vecs = tilt.magnify_impact_axis(magnification=10**self.magnification.value()).iterate_tilt_calculation(save_data=False)
+
+        additional_string = "" 
+        if magnified_normal_vecs is None:
+            magnified_normal_vecs = np.copy(normal_vecs)
+            additional_string = " (magnification could not be shown)"
         
         try:
             avg_normalized = np.mean(normal_vecs, axis=0) / np.linalg.norm(np.mean(normal_vecs, axis=0))
@@ -503,6 +571,7 @@ class MainWindow(QtWidgets.QWidget):
 
                 std2_temp = std2
                 c = 0
+                
                 if std != 0:
                     while int(std2_temp) < 1:
                         std2_temp *= 10
@@ -510,9 +579,9 @@ class MainWindow(QtWidgets.QWidget):
                 else:
                     c = 2
 
-                text = f"{'Average'}: {int(angle2 * 10**c)/10**c:>10.{c}f}±{int(std2 * 10**c)/10**c:.{c}f} mrad"
+                text = f"{'Average'}: {int(angle2 * 10**c)/10**c:>10.{c}f}±{int(std2 * 10**c)/10**c:.{c}f} mrad" + additional_string
         except np.exceptions.AxisError:
-            text = f"Error: not enough points entered or points do not generate well-defined plane"
+            text = f"Error: not enough points entered or points/times do not generate well-defined plane"
         self.result.setText(text)
         
         pass
@@ -525,6 +594,7 @@ class MainWindow(QtWidgets.QWidget):
         self.settings.setValue("velocity", self.velocity_input.value())
         self.settings.setValue("time_slider", self.slider.value())
         self.settings.setValue("color_method", self.color_method.currentIndex())
+        self.settings.setValue("magnification", self.magnification.value())
 
         self.settings.setValue("geometry", self.saveGeometry())
         super().closeEvent(event)

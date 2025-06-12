@@ -35,7 +35,7 @@ class Tilt:
 
             retstr, retval, normal = self.calculate_tilt(pins=np.array(combo))
 
-            if retval is not None:
+            if retval is not None or normal is not None:
                 normal_vecs.append(normal)
                 angles.append(retval)
                 avg = retval + avg * i
@@ -45,10 +45,10 @@ class Tilt:
             
         normal_vecs = np.array(normal_vecs)
         for idx, vec in enumerate(normal_vecs):
-            if vec[0] < 0:
+            if vec[2] < 0:
                 normal_vecs[idx, :] = -1 * vec
                 # pass
-
+        
         if len(angles) > 0:
             std = np.std(angles)
             avg = np.mean(angles)
@@ -93,19 +93,33 @@ class Tilt:
                 print(impact_coords[pin])
 
         angles_for_plane = []
+        pin_angles = []
         for i in range(3):
             v1 = impact_coords[pins[1]] - impact_coords[pins[0]]
             v2 = impact_coords[pins[2]] - impact_coords[pins[0]]
             angles_for_plane.append(
                 np.arccos(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
             )
+            # only want the inter-pin angle along the plane of impact -- tilt should not factor in here
+            t1 = impact_coords[pins[1]] - impact_coords[pins[0]]
+            t1[2] = 0
+            t2 = impact_coords[pins[2]] - impact_coords[pins[0]]
+            t2[0] = 0
+            pin_angles.append(
+                np.arccos(np.dot(t1, t2) / (np.linalg.norm(t1) * np.linalg.norm(t2)))
+            )
             pins = np.roll(pins, 1)
+            
+        angles_for_plane = np.array(angles_for_plane)
+        pin_angles = np.array(pin_angles)
 
-        maxind = np.argmax(angles_for_plane)
-        pins = np.roll(pins, maxind)
-        angle_spanning_plane = angles_for_plane[maxind]
-
-        if 30 < angle_spanning_plane * 180 / np.pi < 150:
+        minind = np.argmin(np.abs(pin_angles - np.pi/2)) # closest to right angle is best
+        pins = np.roll(pins, minind)
+        angle_spanning_plane = angles_for_plane[minind]
+        pin_angle = pin_angles[minind]
+        
+        # if 30 < angle_spanning_plane * 180 / np.pi < 150 or (self.magnification > 1 and 2 < angle_spanning_plane * 180 / np.pi < 178):
+        if 30 < pin_angle * 180 / np.pi < 150:
             normal = np.cross(
                 impact_coords[pins[1]] - impact_coords[pins[0]],
                 impact_coords[pins[2]] - impact_coords[pins[0]],
@@ -115,7 +129,7 @@ class Tilt:
             angle = np.arccos(normal[2])
             if np.abs(np.pi - angle) < angle:
                 angle = np.abs(np.pi - angle)
-
+                
             retstr = f"Pins {pins}: {angle * 1e3:>10.3f} mrad (v1-v2 angle of {angle_spanning_plane * 180 / np.pi:.1f} deg)"
 
         else:
