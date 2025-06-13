@@ -301,7 +301,7 @@ try:
 
             if not hasattr(self, "plane"):
                 # magnification_ratios = {1:10e-3, 10:20e-3, 100:30e-3, 1000:40e-3}
-                self.make_circular_plane(radius=(1+2*self.magnification.value())*10*1e-3)
+                self.make_circular_plane(radius=(1+1.5*self.magnification.value())*10*1e-3)
                 
             # TODO: sometimes gets stuck with new Timing mode, i think doesn't reset properly
             # TODO: input from .xlsx position/delay file
@@ -380,7 +380,7 @@ try:
             # self.init_time = None
             self.setWindowTitle(f"Impact visualization tool ({int(10**self.magnification.value())}x zoom along impact axis)")
             self.mag_value.setText(f"{10**self.magnification.value()}x")
-            self.modify_plane_size(radius=(1+2*self.magnification.value())*10*1e-3)
+            self.modify_plane_size(radius=(1+1.5*self.magnification.value())*10*1e-3)
             self.plot_points()
             
         def set_time_text(self):
@@ -519,6 +519,10 @@ try:
             elif not np.array_equal(np.array(pins), self.pins):
                 self.pins = np.array(pins)
                 self.init_time = None
+                
+            first_impacted = self.pins[np.argmin(self.pins[:, 3]), :]
+            self.init_time = self.time - np.dot(first_impacted[:3]-start, np.array([1,0,0])) / self.velocity_input.value() * 10**self.magnification.value()
+            # print(np.dot(first_impacted[:3]-start, np.array([1,0,0])) )
 
             if points:
                 pos = np.array(points)
@@ -539,14 +543,12 @@ try:
                         # else:
                         #     print(self.time, self.init_time, self.pins[idx, 3]*1e9)
                         #     if self.time > self.pins[idx, 3] * 1e9: # TODO: need to figure out a nice way to do the timing mode. maybe find the earliest time that a collision occurs and increment the timing from there? 
-                        if self.init_time is None and self.pins[idx, 3] == np.min(self.pins[:, 3]) and d > 0:
-                            self.init_time = np.copy(self.time)
-                            self.set_time_text()
+                        
+                        # issue comes from the fact that when it initializes, the plane can be set in a d>0 position already, and all pins can be d>0 which is obviously not the true self.init_time
+                        # self.init_time can just be the z-axis position of the first pin divided by the shot velocity
                         if self.init_time is not None and self.time - self.init_time >= (self.pins[idx, 3] - np.min(self.pins[:, 3])) * 1e9:
                             c = (0, 1, 0, 1)
                             
-                        # print(self.init_time, self.time, self.pins[idx, 3], np.min(self.pins[:, 3]))
-
                     colors.append(c)
 
                 self.scatter.setData(pos=pos, color=np.array(colors))
